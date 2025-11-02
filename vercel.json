@@ -1,4 +1,3 @@
 {
-  "builds": [{ "src": "app.py", "use": "@vercel/python" }],
-  "includeFiles": ["rent_pipe.pkl"]
+  "builds": [{ "src": "app.py", "use": "@vercel/python" }]
 }
