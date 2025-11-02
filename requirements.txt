@@ -1,6 +1,6 @@
-Flask
-flask-cors
+flask
 joblib
 numpy
-requests
+scikit-learn
 python-dotenv
+requests
