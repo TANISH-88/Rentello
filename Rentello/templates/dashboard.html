@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Rentello — Prediction with Typewriter Price + AI Suggestions</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  html,body{height:100%;margin:0;overflow:hidden;font-family:Inter,system-ui;background:#0f172a;color:#e6eef8}
+  .patreon-bg{position:fixed;inset:0;z-index:-2;pointer-events:none;
+    background:radial-gradient(circle at 20% 40%,#ff6ec7 0%,transparent 60%),
+               radial-gradient(circle at 80% 60%,#6ec7ff 0%,transparent 60%),
+               radial-gradient(circle at 50% 80%,#a07bff 0%,transparent 60%),
+               radial-gradient(circle at 30% 70%,#ff9f6e 0%,transparent 60%);
+    background-size:200% 200%;filter:blur(160px) saturate(1.25);
+    animation:moveGradients 45s ease-in-out infinite alternate}
+  @keyframes moveGradients{0%{background-position:20% 30%,80% 60%,40% 70%,60% 40%}
+    50%{background-position:30% 40%,70% 50%,50% 80%,40% 60%}
+    100%{background-position:20% 30%,80% 60%,40% 70%,60% 40%}}
+  .grain{position:fixed;inset:0;z-index:-1;opacity:0.02;pointer-events:none;
+    mix-blend-mode:overlay;
+    background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><filter id="f"><feTurbulence baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23f)"/></svg>');
+    background-size:cover}
+  .vignette{position:fixed;inset:0;z-index:0;pointer-events:none;
+    background:radial-gradient(1000px 600px at 50% 50%,transparent 40%,rgba(0,0,0,.45));
+    mix-blend-mode:multiply}
+  .cursor{position:fixed;left:0;top:0;width:300px;height:300px;border-radius:50%;
+    pointer-events:none;z-index:9999;
+    background:radial-gradient(circle,rgba(255,255,255,0.12),rgba(56,189,248,0.05) 40%,transparent 70%);
+    filter:blur(80px);transform:translate(-50%,-50%);mix-blend-mode:screen;
+    transition:opacity 150ms linear}
+  .container{position:relative;z-index:2;display:flex;height:100vh;padding:40px;box-sizing:border-box;gap:4%}
+  @media(max-width:900px){.container{flex-direction:column;padding:20px}}
+  .guide{width:48%;min-height:280px;padding:32px 36px;
+    background:rgba(15,18,26,0.45);backdrop-filter:blur(12px) saturate(1.05);
+    border-radius:16px;color:#eee;display:flex;flex-direction:column;
+    transition:opacity 0.4s ease,transform 0.4s ease;overflow-y:auto}
+  .guide.hiding{opacity:0;transform:translateY(8px)}
+  .guide h2{color:#38bdf8;margin:0 0 12px;font-size:26px}
+  .guide p{margin:0;font-size:17px;line-height:1.7;color:#cfd4e0;white-space:pre-wrap}
+  .form{width:48%;display:flex;flex-direction:column;justify-content:center;align-items:stretch;padding:20px;gap:18px}
+  .form input,.form select{width:100%;padding:16px;font-size:16px;border-radius:10px;border:none;background:rgba(30,41,59,0.7);color:#e6eef8;outline:none}
+  .form button{margin-top:20px;padding:16px 28px;font-size:17px;border-radius:10px;border:none;background:#38bdf8;color:#06202a;cursor:pointer;font-weight:600}
+  .form button:hover{background:#0ea5e9}
+  #result{margin-top:18px;padding:14px;border-radius:10px;display:none;width:100%;text-align:center;font-weight:700;font-size:20px;letter-spacing:1px;color:#aaffaa;background:#123624;box-shadow:0 0 18px rgba(56,189,248,0.35)}
+  #aiSuggestion{margin-top:18px;padding:14px;border-radius:10px;width:100%;display:none;background:rgba(20,20,30,0.55);color:#e6eef8;line-height:1.6;font-size:16px}
+</style>
+</head>
+<body>
+  <div class="patreon-bg"></div>
+  <div class="grain"></div>
+  <div class="vignette"></div>
+  <div id="cursor" class="cursor"></div>
+
+  <div class="container">
+    <div class="guide" id="guideBox">
+      <h2>Welcome to Rentello</h2>
+      <p>Focus any field and AI will explain how that field affects rent predictions in detail.</p>
+      <div id="aiSuggestion"></div> <!-- ✅ AI suggestion box -->
+    </div>
+
+    <div class="form">
+      <input type="number" id="bedrooms" placeholder="Bedrooms">
+      <input type="number" id="bathrooms" placeholder="Bathrooms">
+      <input type="number" id="lotarea" placeholder="Lot Area">
+      <select id="grade"><option value="">Grade (1–13)</option><option value="1">1 - Basic</option><option value="5">5 - Standard</option><option value="9">9 - Premium</option><option value="13">13 - Luxury</option></select>
+      <select id="condition"><option value="">Condition (1–5)</option><option value="1">1 - Poor</option><option value="3">3 - Good</option><option value="5">5 - Excellent</option></select>
+      <select id="waterfront"><option value="">Waterfront</option><option value="0">No</option><option value="1">Yes</option></select>
+      <select id="views"><option value="">Views (0–4)</option><option value="0">0 - None</option><option value="2">2 - Good</option><option value="4">4 - Panoramic</option></select>
+      <button id="predictBtn" type="button">Predict</button>
+      <div id="result"></div>
+    </div>
+  </div>
+
+<script>
+/* smooth cursor */
+(function(){
+  const cursor=document.getElementById('cursor');
+  let target={x:innerWidth/2,y:innerHeight/2},current={x:target.x,y:target.y};
+  function lerp(a,b,t){return a+(b-a)*t}
+  window.addEventListener('mousemove',e=>{target.x=e.clientX;target.y=e.clientY;cursor.style.opacity='1'});
+  window.addEventListener('mouseleave',()=>cursor.style.opacity='0');
+  (function anim(){current.x=lerp(current.x,target.x,0.08);current.y=lerp(current.y,target.y,0.08);cursor.style.left=current.x+'px';cursor.style.top=current.y+'px';requestAnimationFrame(anim)})();
+})();
+
+/* longer explanations */
+const fieldLabels={bedrooms:"Bedrooms",bathrooms:"Bathrooms",lotarea:"Lot Area",grade:"Grade",condition:"Condition",waterfront:"Waterfront",views:"Views"};
+const fallbacks={
+  bedrooms:`Bedrooms directly determine how many people can comfortably live in a house. 
+Families often need at least 2–3 bedrooms, while students or singles prefer smaller spaces. 
+More bedrooms increase flexibility for offices, guests, or rentals. 
+Well-proportioned and well-lit bedrooms strongly boost rental demand. 
+Overall, the number and design of bedrooms significantly influence rent.`,
+  bathrooms:`Bathrooms heavily affect comfort and livability. 
+Homes with multiple bathrooms reduce conflicts and improve convenience. 
+Modern bathrooms with good ventilation and clean finishes attract tenants easily. 
+Even compact second bathrooms increase rent value considerably. 
+Tenants see clean, updated bathrooms as a sign of quality.`,
+  lotarea:`Lot Area represents total outdoor land size. 
+Bigger lots allow for parking, gardening, and outdoor spaces, making homes more appealing. 
+In suburban areas, larger lots can dramatically increase property value. 
+Extra space provides privacy and future construction opportunities. 
+Well-maintained yards or green areas improve overall rental satisfaction.`,
+  grade:`Grade reflects construction quality and finishing. 
+High-grade homes rent quickly because tenants value comfort and style. 
+Better insulation, flooring, and design reduce maintenance issues. 
+Luxury-grade homes can earn far higher rent than mid-grade ones of the same size. 
+Thus, grade is one of the strongest rent predictors.`,
+  condition:`Condition measures upkeep and repair status. 
+Well-maintained properties feel safe and trustworthy. 
+Fresh paint, proper wiring, and clean interiors increase rental willingness. 
+Poor condition lowers rental rates and increases vacancy times. 
+Consistent maintenance secures higher rent and long-term tenants.`,
+  waterfront:`Waterfront properties carry premium rental appeal. 
+Scenic water access is seen as luxury and lifestyle. 
+Even partial views enhance rental prices, while direct waterfront doubles the premium. 
+Such homes attract long-term tenants seeking exclusivity. 
+Demand for waterfront is always strong, keeping rents high.`,
+  views:`Views enrich living experience and directly boost value. 
+Tenants are drawn to scenic cityscapes, mountains, or sea views. 
+Clear, open views create lifestyle appeal beyond property size. 
+Better views increase both rent prices and tenancy length. 
+Strong views differentiate a property in crowded markets.`
+};
+function updateGuide(field){
+  const g=document.getElementById('guideBox');
+  g.classList.add('hiding');
+  setTimeout(()=>{g.innerHTML=`<h2>${fieldLabels[field]}</h2><p>${fallbacks[field]}</p><div id="aiSuggestion"></div>`;g.classList.remove('hiding');},350);
+}
+['bedrooms','bathrooms','lotarea','grade','condition','waterfront','views'].forEach(id=>{
+  const el=document.getElementById(id);
+  if(el){el.addEventListener('focus',()=>updateGuide(id));el.addEventListener('click',()=>updateGuide(id));}
+});
+
+/* typewriter effect */
+function typeWriter(el,text,speed=30){
+  el.textContent="";
+  let i=0;
+  function typing(){
+    if(i<text.length){
+      el.textContent+=text.charAt(i);
+      i++;
+      setTimeout(typing,speed);
+    }
+  }
+  typing();
+}
+
+/* Predict button */
+document.getElementById('predictBtn').addEventListener('click', async () => {
+  const data={
+    bedrooms:document.getElementById('bedrooms').value,
+    bathrooms:document.getElementById('bathrooms').value,
+    lotarea:document.getElementById('lotarea').value,
+    grade:document.getElementById('grade').value,
+    condition:document.getElementById('condition').value,
+    waterfront:document.getElementById('waterfront').value,
+    views:document.getElementById('views').value
+  };
+  const resultDiv=document.getElementById('result');
+  const aiDiv=document.getElementById('aiSuggestion');
+  try{
+    const res=await fetch('/predict',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    const r=await res.json();
+    resultDiv.style.display='block';
+    resultDiv.style.background='#123624';
+    resultDiv.style.color='#aaffaa';
+
+    // show only price
+    let rawText=r.message||'Prediction complete.';
+    let priceText=rawText.split(/[.!\n]/)[0]+"."; 
+    typeWriter(resultDiv,priceText,30);
+
+    // AI property suggestion
+    aiDiv.style.display='block';
+    aiDiv.textContent="Thinking of best matches...";
+    const aiRes=await fetch('/suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({price:r.prediction})});
+    const aiData=await aiRes.json();
+    aiDiv.textContent=aiData.suggestion||"No suggestion available.";
+  }catch(e){
+    resultDiv.style.display='block';
+    resultDiv.style.background='#3a1e1e';
+    resultDiv.style.color='#ffbaba';
+    resultDiv.textContent='Network error.';
+  }
+});
+</script>
+</body>
+</html>
