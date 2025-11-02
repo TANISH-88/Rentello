@@ -35,7 +35,10 @@ GROQ_URL = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/comple
 GROQ_MODEL = os.getenv("GROQ_MODEL", "qwen/qwen3-32b")
 
 app = Flask(__name__)
-model = joblib.load("rent_pipe.pkl")
+
+# ✅ Correct path for Vercel deployment
+model_path = os.path.join(os.path.dirname(__file__), "../rent_pipe.pkl")
+model = joblib.load(model_path)
 
 LOCAL_FALLBACK = {
     "tier1": [
@@ -172,4 +175,3 @@ def suggest():
 
 if __name__ == "__main__":
     app.run(debug=True)
-
