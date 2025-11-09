@@ -1,7 +1,0 @@
-flask
-joblib
-numpy
-scikit-learn
-python-dotenv
-requests
-
